@@ -1,78 +1,194 @@
-This is the Official repository of **Spring Boot Microservices Professional eCommerce Masterclass** on Udemy
+# E-Commerce Microservices (Spring Boot + Spring Cloud)
 
-# The Ultimate Java and Spring Boot Mastery
+A Java 21 / Spring Boot 3 microservices demo for a small e-commerce domain (users, products, cart, orders) with service discovery, centralized config, API gateway, async events, and observability.
 
-Welcome to your one-stop-shop for mastering Java and Spring Boot! This repository offers a comprehensive learning experience with high-quality resources and community support. Dive into over 23+ hours of premium content, with everything you need to excel at Java and Spring Boot development.
+---
 
-## 🎓 Learning Roadmap
+## High-level architecture
 
-Most of the courses below are available in **Udemy For Business**, so if you have subscription - you can get FREE access.
-Here’s a structured path to enhance your skills with detailed courses available:
+- **Config Server** (Spring Cloud Config) — centralized configuration for all services
+- **Service Discovery** (Eureka) — service registration + discovery
+- **API Gateway** (Spring Cloud Gateway, WebFlux) — single entry point, routing, retries, circuit breaker, (optional) rate limiting
+- **Product Service** (Spring MVC + JPA + PostgreSQL) — CRUD + search, stock
+- **User Service** (Spring MVC + MongoDB) — user profiles + **Keycloak Admin API** user provisioning
+- **Order Service** (Spring MVC + JPA + PostgreSQL) — cart + order creation, calls other services, publishes events
+- **Notification Service** (Spring Cloud Stream) — consumes `OrderCreated` events and logs/handles notifications
 
-1. **[Spring Boot Full Stack By Building Complex Projects Step by Step](https://link.embarkx.com/spring-boot) (80+ Hours of Content)**
-2. **[Master Spring Boot Microservices](https://link.embarkx.com/microservices) (50+ Hours of Content)**
-3. **[Learn Java with 60+ Hours of Content](http://link.embarkx.com/java) (60+ Hours of Content)**
-4. **[Master Spring Security with React JS + OAuth2](https://link.embarkx.com/spring-security) (34+ Hours of Content)**
-5. **[Master IntelliJ IDEA](http://link.embarkx.com/intellij) (3+ Hours of Content)**
+### Service-to-service interactions
 
+- **Order Service → Product Service**: validate product exists and stock is enough
+- **Order Service → User Service**: validate user exists
+- **Order Service → Kafka**: publish `OrderCreated` event
+- **Notification Service ← Kafka**: consume `OrderCreated` event
 
-## 🌟 With All Our Courses You Gain Access To
+```mermaid
+flowchart LR
+  C[Client] --> G[Gateway Service]
+  G -->|lb://| P[Product Service]
+  G -->|lb://| U[User Service]
+  G -->|lb://| O[Order Service]
 
-- 📝 **Notes:** Detailed and downloadable notes to accompany each lesson.
-- 💻 **Source Code:** Full access to the source code used in the tutorials.
-- 🤔 **Doubt Solving:** Responsive instructor and community support.
-- 🎥 **High-Quality HD Videos:** Easy to understand, high-definition video tutorials.
-- 🔄 **Free Lifetime Updates:** Continuous updates to course content at no extra cost.
+  O --> P
+  O --> U
+  O --> K[(Kafka)]
+  K --> N[Notification Service]
 
-## 📚 Why Choose This Mastery Series?
+  CS[Config Server] -->|config| G
+  CS -->|config| P
+  CS -->|config| U
+  CS -->|config| O
 
-With this series, you're not just learning; you're preparing to dominate the field of Java and Spring Boot development. Our structured learning path ensures that you build your skills progressively, with each course designed to build on the knowledge gained from the previous one.
+  E[Eureka] <-->|register/discover| G
+  E <-->|register| P
+  E <-->|register| U
+  E <-->|register| O
+```
 
-### Join Us Now!
+---
 
-Start your journey today to become a master at Java and Spring Boot. Our community and expert instructors are here to support your learning every step of the way. **Enroll and start building your future, today!**
+## Tech stack
 
+**Core**
+- Java **21**
+- Spring Boot **3.4.x**
+- Spring Cloud **2024.0.x**
 
+**Spring Cloud / Patterns**
+- Eureka (service discovery)
+- Config Server (+ Spring Cloud Bus over RabbitMQ for refresh)
+- Spring Cloud Gateway (routing + retry + circuit breaker)
+- Resilience4j (retry/circuit breaker)
 
+**Data**
+- PostgreSQL (product, order)
+- MongoDB (user)
 
+**Async messaging**
+- Kafka (OrderCreated event via Spring Cloud Stream)
+- RabbitMQ (Spring Cloud Bus for config refresh)
 
-# Usage Policy for Course Materials
+**Security**
+- Keycloak (OIDC)
+- Gateway as OAuth2 Resource Server (JWT auth)
 
-## Instructor Information
+**Observability**
+- Actuator + Prometheus metrics
+- Zipkin distributed tracing
+- Grafana + Loki (logs) + Prometheus (metrics)
 
-**Instructor:** Faisal Memon  
-**Company:** [EmbarkX.com](http://www.embarkx.com)
+---
 
-## Policy Overview
+## Repository structure
 
-This document outlines the guidelines and restrictions concerning the use of course materials provided by EmbarkX, including but not limited to PDF presentations, code samples, and video tutorials.
+```
+.
+├─ configserver/        # Spring Cloud Config Server + service configs in src/main/resources/config
+├─ eureka/              # Eureka Server
+├─ gateway/             # API Gateway (WebFlux)
+├─ product/             # Product microservice (PostgreSQL)
+├─ user/                # User microservice (MongoDB + Keycloak admin integration)
+├─ order/               # Order/Cart microservice (PostgreSQL + service-to-service calls + Kafka event)
+├─ notification/        # Event consumer (Kafka)
+├─ deploy/docker/       # docker-compose + monitoring/logging configs
+└─ additional/          # extra demos/experiments (not required for the core system)
+```
 
-### 1. Personal Use Only
+---
 
-The materials provided in this course are intended for **your personal use only**. They are to be used solely for the purpose of learning and completing this course.
+## Running locally (Docker Compose)
 
-### 2. No Unauthorized Sharing or Distribution
+### Prerequisites
+- Docker + Docker Compose
 
-You are **not permitted** to share, distribute, or publicly post any course materials on any websites, social media platforms, or other public forums without prior written consent from the instructor.
+### Start everything
 
-### 3. Intellectual Property
+From `deploy/docker`:
 
-All course materials are protected by copyright laws and are the intellectual property of Faisal Memon and EmbarkX. Unauthorized use, reproduction, or distribution of these materials is **strictly prohibited**.
+```bash
+cd deploy/docker
+# optionally create .env here (see below)
+docker compose up -d
+```
 
-### 4. Reporting Violations
+### Environment variables (recommended)
+Create `deploy/docker/.env`:
 
-If you become aware of any unauthorized sharing or distribution of course materials, please report it immediately to [embarkxofficial@gmail.com](mailto:embarkxofficial@gmail.com).
+```bash
+DB_USER=embarkx
+DB_PASSWORD=embarkx
+MONGO_URI=mongodb://mongo:27017
+ZIPKIN_URL=http://zipkin:9411/api/v2/spans
 
-### 5. Legal Action
+RABBITMQ_HOST=rabbitmq
+RABBITMQ_PORT=5672
+RABBITMQ_USERNAME=guest
+RABBITMQ_PASSWORD=guest
+RABBITMQ_VHOST=/
+```
 
-We reserve the right to take legal action against individuals or entities found to be violating this usage policy.
+### Useful UIs / ports
+- Gateway: `http://localhost:8080`
+- Eureka: `http://localhost:8761`
+- Config Server: `http://localhost:8888`
+- Keycloak: `http://localhost:8443` (admin/admin)
+- Zipkin: `http://localhost:9411`
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000` (anonymous enabled in compose)
+- RabbitMQ UI: `http://localhost:15672` (guest/guest)
+- PgAdmin: `http://localhost:5050`
 
-## Thank You
+> Note: in the provided compose file, internal service ports (8081/8082/8083/8084) are not exposed to host by default — the intended entry is **Gateway**.
 
-Thank you for respecting these guidelines and helping us maintain the integrity of our course materials.
+---
 
-## Contact Information
+## API overview
 
-- **Email:** [embarkxofficial@gmail.com](mailto:embarkxofficial@gmail.com)
-- **Website:** [www.embarkx.com](http://www.embarkx.com)
+### Product Service
+- `POST /api/products` — create product
+- `GET /api/products` — list products
+- `GET /api/products/{id}` — get product
+- `PUT /api/products/{id}` — update
+- `DELETE /api/products/{id}` — delete
+- `GET /api/products/search?keyword=...` — search
 
+### User Service
+- `POST /api/users` — create user (also creates a Keycloak user)
+- `GET /api/users` — list users
+- `GET /api/users/{id}` — get user
+- `PUT /api/users/{id}` — update user
+
+### Cart + Orders (Order Service)
+- `POST /api/cart` — add to cart (requires header `X-User-ID`)
+- `GET /api/cart` — get cart (requires header `X-User-ID`)
+- `DELETE /api/cart/items/{productId}` — remove from cart (requires header `X-User-ID`)
+- `POST /api/orders` — create order from cart (requires header `X-User-ID`)
+
+### Example cURL
+
+```bash
+# create product (via gateway)
+curl -X POST http://localhost:8080/api/products \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Keyboard","description":"Mechanical","price":99.99,"stockQuantity":10,"category":"Accessories","imageUrl":""}'
+
+# add to cart
+curl -X POST http://localhost:8080/api/cart \
+  -H "Content-Type: application/json" \
+  -H "X-User-ID: <userId>" \
+  -d '{"productId":"1","quantity":1}'
+
+# create order
+curl -X POST http://localhost:8080/api/orders \
+  -H "X-User-ID: <userId>"
+```
+
+---
+
+## Observability
+
+- Each service exposes Spring Boot **Actuator** endpoints.
+- Traces are exported to **Zipkin**.
+- Metrics are scraped by **Prometheus**.
+- Logs are shipped to **Loki** and explored in **Grafana**.
+
+---
